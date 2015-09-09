@@ -1,28 +1,11 @@
 /*
- * libjingle
- * Copyright 2015, Google Inc.
+ *  Copyright 2015 The WebRTC Project Authors. All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- *  1. Redistributions of source code must retain the above copyright notice,
- *     this list of conditions and the following disclaimer.
- *  2. Redistributions in binary form must reproduce the above copyright notice,
- *     this list of conditions and the following disclaimer in the documentation
- *     and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products
- *     derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
- * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *  Use of this source code is governed by a BSD-style license
+ *  that can be found in the LICENSE file in the root of the source
+ *  tree. An additional intellectual property rights grant can be found
+ *  in the file PATENTS.  All contributing project authors may
+ *  be found in the AUTHORS file in the root of the source tree.
  */
 
 package org.appspot.apprtc.util;
@@ -36,14 +19,16 @@ import java.net.URL;
 import java.util.Scanner;
 
 /**
- * Asynchronious http requests implementation.
+ * Asynchronous http requests implementation.
  */
 public class AsyncHttpURLConnection {
-  private static final int HTTP_TIMEOUT_MS = 5000;
+  private static final int HTTP_TIMEOUT_MS = 8000;
+  private static final String HTTP_ORIGIN = "https://apprtc.appspot.com";
   private final String method;
   private final String url;
   private final String message;
   private final AsyncHttpEvents events;
+  private String contentType;
 
   /**
    * Http requests callbacks.
@@ -59,6 +44,10 @@ public class AsyncHttpURLConnection {
     this.url = url;
     this.message = message;
     this.events = events;
+  }
+
+  public void setContentType(String contentType) {
+    this.contentType = contentType;
   }
 
   public void send() {
@@ -83,14 +72,19 @@ public class AsyncHttpURLConnection {
       connection.setDoInput(true);
       connection.setConnectTimeout(HTTP_TIMEOUT_MS);
       connection.setReadTimeout(HTTP_TIMEOUT_MS);
+      // TODO(glaznev) - query request origin from pref_room_server_url_key preferences.
+      connection.addRequestProperty("origin", HTTP_ORIGIN);
       boolean doOutput = false;
       if (method.equals("POST")) {
         doOutput = true;
         connection.setDoOutput(true);
         connection.setFixedLengthStreamingMode(postData.length);
       }
-      connection.setRequestProperty(
-          "content-type", "text/plain; charset=utf-8");
+      if (contentType == null) {
+        connection.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
+      } else {
+        connection.setRequestProperty("Content-Type", contentType);
+      }
 
       // Send POST request.
       if (doOutput && postData.length > 0) {
@@ -104,11 +98,13 @@ public class AsyncHttpURLConnection {
       if (responseCode != 200) {
         events.onHttpError("Non-200 response to " + method + " to URL: "
             + url + " : " + connection.getHeaderField(null));
+        connection.disconnect();
         return;
       }
       InputStream responseStream = connection.getInputStream();
       String response = drainStream(responseStream);
       responseStream.close();
+      connection.disconnect();
       events.onHttpComplete(response);
     } catch (SocketTimeoutException e) {
       events.onHttpError("HTTP " + method + " to " + url + " timeout");

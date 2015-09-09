@@ -1,29 +1,13 @@
 /*
- * libjingle
- * Copyright 2014, Google Inc.
+ *  Copyright 2014 The WebRTC Project Authors. All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- *  1. Redistributions of source code must retain the above copyright notice,
- *     this list of conditions and the following disclaimer.
- *  2. Redistributions in binary form must reproduce the above copyright notice,
- *     this list of conditions and the following disclaimer in the documentation
- *     and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products
- *     derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
- * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *  Use of this source code is governed by a BSD-style license
+ *  that can be found in the LICENSE file in the root of the source
+ *  tree. An additional intellectual property rights grant can be found
+ *  in the file PATENTS.  All contributing project authors may
+ *  be found in the AUTHORS file in the root of the source tree.
  */
+
 package org.appspot.apprtc;
 
 import org.appspot.apprtc.util.AsyncHttpURLConnection;
@@ -81,14 +65,12 @@ public class WebSocketChannelClient {
    * All events are dispatched from a looper executor thread.
    */
   public interface WebSocketChannelEvents {
-    public void onWebSocketOpen();
     public void onWebSocketMessage(final String message);
     public void onWebSocketClose();
     public void onWebSocketError(final String description);
   }
 
-  public WebSocketChannelClient(LooperExecutor executor,
-      WebSocketChannelEvents events) {
+  public WebSocketChannelClient(LooperExecutor executor, WebSocketChannelEvents events) {
     this.executor = executor;
     this.events = events;
     roomID = null;
@@ -101,8 +83,7 @@ public class WebSocketChannelClient {
     return state;
   }
 
-  public void connect(final String wsUrl, final String postUrl,
-      final String roomID, final String clientID) {
+  public void connect(final String wsUrl, final String postUrl) {
     checkIfCalledOnValidThread();
     if (state != WebSocketConnectionState.NEW) {
       Log.e(TAG, "WebSocket is already connected.");
@@ -110,8 +91,6 @@ public class WebSocketChannelClient {
     }
     wsServerUrl = wsUrl;
     postServerUrl = postUrl;
-    this.roomID = roomID;
-    this.clientID = clientID;
     closeEvent = false;
 
     Log.d(TAG, "Connecting WebSocket to: " + wsUrl + ". Post URL: " + postUrl);
@@ -126,12 +105,15 @@ public class WebSocketChannelClient {
     }
   }
 
-  public void register() {
+  public void register(final String roomID, final String clientID) {
     checkIfCalledOnValidThread();
+    this.roomID = roomID;
+    this.clientID = clientID;
     if (state != WebSocketConnectionState.CONNECTED) {
       Log.w(TAG, "WebSocket register() in state " + state);
       return;
     }
+    Log.d(TAG, "Registering WebSocket for room " + roomID + ". CLientID: " + clientID);
     JSONObject json = new JSONObject();
     try {
       json.put("cmd", "register");
@@ -191,17 +173,16 @@ public class WebSocketChannelClient {
     checkIfCalledOnValidThread();
     Log.d(TAG, "Disonnect WebSocket. State: " + state);
     if (state == WebSocketConnectionState.REGISTERED) {
+      // Send "bye" to WebSocket server.
       send("{\"type\": \"bye\"}");
       state = WebSocketConnectionState.CONNECTED;
+      // Send http DELETE to http WebSocket server.
+      sendWSSMessage("DELETE", "");
     }
     // Close WebSocket in CONNECTED or ERROR states only.
     if (state == WebSocketConnectionState.CONNECTED
         || state == WebSocketConnectionState.ERROR) {
       ws.disconnect();
-
-      // Send DELETE to http WebSocket server.
-      sendWSSMessage("DELETE", "");
-
       state = WebSocketConnectionState.CLOSED;
 
       // Wait for websocket close event to prevent websocket library from
@@ -270,7 +251,10 @@ public class WebSocketChannelClient {
         @Override
         public void run() {
           state = WebSocketConnectionState.CONNECTED;
-          events.onWebSocketOpen();
+          // Check if we have pending register request.
+          if (roomID != null && clientID != null) {
+            register(roomID, clientID);
+          }
         }
       });
     }
